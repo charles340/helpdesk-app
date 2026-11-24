@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Deskline
 
-## Getting Started
+An IT helpdesk for a small team. Requesters file tickets and follow the replies. Agents work a shared queue with SLA deadlines, internal notes and a knowledge base. Admins manage who is an agent.
 
-First, run the development server:
+Built with Next.js 16 (App Router, Cache Components), Drizzle ORM, Better Auth and Tailwind CSS. The database is Postgres, or PGlite (Postgres compiled to WebAssembly) when you don't have a server.
+
+## Run it locally
+
+You need [Bun](https://bun.sh) 1.4. No database install is needed.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+bun install
+cp .env.example .env    # then set BETTER_AUTH_SECRET, e.g. openssl rand -base64 32
+bun run db:seed         # demo users, ~30 tickets and a few articles
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. Every demo account uses the password `deskline-demo`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Role      | Email             |
+| --------- | ----------------- |
+| Requester | luka@example.com  |
+| Agent     | ana@example.com   |
+| Admin     | admin@example.com |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+With `DATABASE_URL` empty, data lives in `./.pglite` and the schema is migrated the first time the app opens it. PGlite allows one process at a time, so stop `bun dev` before running `bun run db:seed`.
 
-## Learn More
+## Roles
 
-To learn more about Next.js, take a look at the following resources:
+- Requesters see and reply to their own tickets. They can close a ticket, or reopen one that was resolved.
+- Agents see every ticket, change status, priority and assignee, write internal notes, see the dashboard and edit the knowledge base.
+- Admins can do everything agents can, and change other people's roles on the Users page. Moving an agent back to requester puts their active tickets back in the unassigned queue.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Pages check the role on the server. `src/proxy.ts` only sends visitors without a session cookie to the sign-in page.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Database
 
-## Deploy on Vercel
+Set `DATABASE_URL` to a `postgres://` URL to use a Postgres server instead of PGlite. `docker compose up db` starts one, reachable at `postgres://deskline:deskline@localhost:5432/deskline`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+After changing `src/db/schema.ts`:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+bun run db:generate   # writes a new migration to ./drizzle
+bun run db:migrate    # applies it to a Postgres server
+```
+
+PGlite databases pick up new migrations on their own.
+
+## Tests
+
+```bash
+bun run test            # unit and database tests (Vitest, in-memory PGlite)
+bun run test:e2e        # browser tests (Playwright)
+```
+
+The browser tests build the app, seed a separate database in `./.pglite-e2e` and start it on port 3100, so they don't touch your dev data. Run `bun run test:e2e:install` once to download Chromium.
+
+Other checks: `bun run typecheck`, `bun run lint` and `bun run format:check`.
+
+## Docker
+
+```bash
+docker compose --profile app up --build
+```
+
+This starts Postgres and the app on port 3000. The image runs the standalone Next.js server on Node and applies migrations when it starts (`MIGRATE_ON_START=true`). Set a real `BETTER_AUTH_SECRET` before using it anywhere but your own machine.
+
+## Where things are
+
+| Path             | What it holds                                                        |
+| ---------------- | -------------------------------------------------------------------- |
+| `src/app/(app)`  | Signed-in pages: tickets, dashboard, knowledge base, users           |
+| `src/app/(auth)` | Sign-in and sign-up                                                  |
+| `src/server`     | Reads and writes for each area, with permission checks, plus tests   |
+| `src/lib`        | Code shared with the browser: SLA rules, status workflow, formatting |
+| `src/db`         | Schema, connection and migrations helper                             |
+| `scripts`        | `migrate.ts` and `seed.ts`                                           |
+| `e2e`            | Playwright tests                                                     |
+
+SLA targets per priority are in `src/lib/sla.ts`. Dates are shown in the `Europe/Zagreb` time zone, set in `src/lib/format.ts`.
