@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: deskline
+      POSTGRES_PASSWORD: deskline
+      POSTGRES_DB: deskline
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U deskline']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    profiles: ['app']
+    environment:
+      DATABASE_URL: postgres://deskline:deskline@db:5432/deskline
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-docker-secret-change-me}
+      BETTER_AUTH_URL: http://localhost:3000
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:

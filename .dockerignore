@@ -1,0 +1,11 @@
+# Keep secrets, local databases and build output out of the image.
+.env*
+!.env.example
+.pglite*
+.next
+node_modules
+test-results
+playwright-report
+coverage
+.git
+*.tsbuildinfo
